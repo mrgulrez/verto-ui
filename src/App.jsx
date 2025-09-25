@@ -70,7 +70,7 @@ function App() {
     try {
       setQuizState('loading');
       stopTimer();
-      const submissionResults = await quizService.submitQuizAnswers(userAnswers);
+      const submissionResults = await quizService.submitQuizAnswers(userAnswers, questions);
       setResults(submissionResults);
       setQuizState('results');
     } catch (err) {
@@ -117,14 +117,14 @@ function App() {
     return (
       <StartScreen
         onStartQuiz={handleStartQuiz}
-        totalQuestions={10} // You might want to get this from the API
+        totalQuestions={10} // Fixed to show 10 questions as per database
         timeLimit={TIME_LIMIT_MINUTES}
       />
     );
   }
 
   if (quizState === 'results' && results) {
-    return <ResultsScreen results={results} onRestart={handleRestart} />;
+    return <ResultsScreen results={results} userAnswers={userAnswers} questions={questions} onRestart={handleRestart} />;
   }
 
   if (quizState === 'active' && currentQuestion) {
