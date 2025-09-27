@@ -25,9 +25,18 @@ const AdminLoginForm = ({ onSuccess }) => {
 
     try {
       const result = await login(formData.username, formData.password);
+      console.log('Login result:', result); // Debug log
       if (result.success) {
         // Check if user is staff
-        if (result.user?.is_staff) {
+        console.log('User data:', result.user); // Debug log
+        console.log('Is staff:', result.user?.is_staff); // Debug log
+        console.log('All user fields:', Object.keys(result.user || {})); // Debug log
+        
+        // Check multiple possible field names for staff status
+        const isStaff = result.user?.is_staff || result.user?.isStaff || result.user?.staff || false;
+        console.log('Final staff check:', isStaff); // Debug log
+        
+        if (isStaff) {
           onSuccess?.();
         } else {
           setError('Access denied. Staff privileges required for admin panel.');
@@ -36,6 +45,7 @@ const AdminLoginForm = ({ onSuccess }) => {
         setError(result.error);
       }
     } catch (error) {
+      console.error('Login error:', error); // Debug log
       setError('An unexpected error occurred');
     } finally {
       setIsLoading(false);

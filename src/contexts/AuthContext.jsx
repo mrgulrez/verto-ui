@@ -43,11 +43,17 @@ export const AuthProvider = ({ children }) => {
     try {
       setIsLoading(true);
       const { user: userData } = await authService.login(username, password);
+      console.log('AuthContext - User data from backend:', userData); // Debug log
       setUser(userData);
       setIsAuthenticated(true);
-      setIsStaff(userData.is_staff);
-      return { success: true };
+      
+      // Check multiple possible field names for staff status
+      const isStaff = userData.is_staff || userData.isStaff || userData.staff || false;
+      console.log('AuthContext - Staff status:', isStaff); // Debug log
+      setIsStaff(isStaff);
+      return { success: true, user: userData };
     } catch (error) {
+      console.error('AuthContext - Login error:', error); // Debug log
       return { success: false, error: error.message };
     } finally {
       setIsLoading(false);
