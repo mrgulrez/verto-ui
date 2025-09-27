@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 
 const QuizView = ({
   question,
@@ -9,17 +9,39 @@ const QuizView = ({
   onNext,
   onPrevious,
   timeLeft,
-  isLastQuestion
+  isLastQuestion,
+  config,
+  username
 }) => {
   const selectedChoiceId = userAnswers[question.id];
   const answeredQuestions = Object.keys(userAnswers).length;
   const progressPercentage = (questionNumber / totalQuestions) * 100;
   const isTimeRunningOut = timeLeft && timeLeft.includes(':') && parseInt(timeLeft.split(':')[0]) < 2;
 
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyPress = (e) => {
+      if (e.key >= '1' && e.key <= '4') {
+        const choiceIndex = parseInt(e.key) - 1;
+        if (choiceIndex < question.choices.length) {
+          onSelectAnswer(question.id, question.choices[choiceIndex].id);
+        }
+      } else if (e.key === 'ArrowLeft' && questionNumber > 1) {
+        onPrevious();
+      } else if (e.key === 'ArrowRight' && selectedChoiceId) {
+        onNext();
+      } else if (e.key === 'Enter' && selectedChoiceId) {
+        onNext();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [question.id, question.choices, questionNumber, selectedChoiceId, onSelectAnswer, onPrevious, onNext]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 p-2 sm:p-4 lg:p-8">
       <div className="max-w-4xl xl:max-w-6xl mx-auto w-full">
-        {/* Header */}
         <div className="bg-white rounded-3xl shadow-2xl p-4 sm:p-6 mb-4 sm:mb-6 backdrop-blur-sm bg-white/95">
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
             <div className="flex flex-wrap items-center gap-3">
@@ -35,16 +57,27 @@ const QuizView = ({
               </div>
             </div>
             <div className="flex items-center space-x-4">
+              {username && (
+                <div className="text-right">
+                  <div className="text-sm text-gray-500">Playing as</div>
+                  <div className="text-lg font-semibold text-blue-600">
+                    {username}
+                  </div>
+                </div>
+              )}
               <div className="text-right">
                 <div className="text-sm text-gray-500">Progress</div>
                 <div className="text-lg font-semibold text-gray-700">
                   {answeredQuestions}/{totalQuestions} answered
                 </div>
               </div>
+              <div className="hidden lg:block text-xs text-gray-400">
+                <div>Press 1-4 to select</div>
+                <div>← → to navigate</div>
+              </div>
             </div>
           </div>
 
-          {/* Progress Bar */}
           <div className="mt-6">
             <div className="flex justify-between text-xs text-gray-500 mb-2">
               <span>Progress</span>
@@ -61,9 +94,7 @@ const QuizView = ({
           </div>
         </div>
 
-        {/* Main Question Card */}
         <div className="bg-white rounded-3xl shadow-2xl p-4 sm:p-6 lg:p-8 backdrop-blur-sm bg-white/95">
-          {/* Question */}
           <div className="mb-8">
             <div className="flex items-start space-x-4">
               <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
@@ -77,7 +108,6 @@ const QuizView = ({
             </div>
           </div>
 
-          {/* Choices */}
           <div className="space-y-3 sm:space-y-4 mb-6 sm:mb-8">
             {question.choices.map((choice, index) => {
               const isSelected = selectedChoiceId === choice.id;
@@ -113,7 +143,6 @@ const QuizView = ({
             })}
           </div>
 
-          {/* Navigation */}
           <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
             <button
               onClick={onPrevious}

@@ -3,21 +3,29 @@ import StartScreen from './components/StartScreen';
 import QuizView from './components/QuizView';
 import ResultsScreen from './components/ResultsScreen';
 import LoadingSpinner from './components/LoadingSpinner';
+import AdminPanel from './components/AdminPanel';
+import ProtectedRoute from './components/ProtectedRoute';
 import { quizService } from './services/quizService';
 import { useCountdown } from './hooks/useCountdown';
-
-const TIME_LIMIT_MINUTES = 10; // 10 minutes timer
+import { useSession } from './hooks/useSession';
+import { useAuth } from './contexts/AuthContext';
 
 function App() {
-  const [quizState, setQuizState] = useState('start'); // 'start', 'loading', 'active', 'results'
+  const [quizState, setQuizState] = useState('start');
   const [questions, setQuestions] = useState([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [userAnswers, setUserAnswers] = useState({});
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
+  const [quizConfig, setQuizConfig] = useState(null);
+  const [totalQuestionsCount, setTotalQuestionsCount] = useState(5); // Default fallback
+  const [questionsCountLoading, setQuestionsCountLoading] = useState(true);
+  const [quizUsername, setQuizUsername] = useState(''); // For anonymous users
+  const { sessionId } = useSession();
+  const { isAuthenticated, user } = useAuth();
 
   const { timeLeft, start: startTimer, stop: stopTimer, reset: resetTimer, formattedTime } = useCountdown(
-    TIME_LIMIT_MINUTES * 60,
+    (quizConfig?.timer_duration || 10) * 60,
     handleTimeUp
   );
 
@@ -27,20 +35,53 @@ function App() {
     }
   }
 
+  const fetchQuizConfig = useCallback(async () => {
+    try {
+      const config = await quizService.getQuizConfig();
+      setQuizConfig(config);
+    } catch (error) {
+      console.error('Failed to load quiz config');
+    }
+  }, []);
+
+  const fetchQuestionsCount = useCallback(async () => {
+    try {
+      setQuestionsCountLoading(true);
+      const count = await quizService.getQuestionsCount();
+      setTotalQuestionsCount(count);
+    } catch (error) {
+      console.error('Failed to load questions count, using default');
+      setTotalQuestionsCount(5);
+    } finally {
+      setQuestionsCountLoading(false);
+    }
+  }, []);
+
   const fetchQuestions = useCallback(async () => {
     try {
       setError(null);
       const quizData = await quizService.fetchQuizQuestions();
       setQuestions(quizData);
+      setTotalQuestionsCount(quizData.length); // Update count with actual questions
       setQuizState('active');
-      startTimer(); // Start the timer when questions are loaded
+      startTimer();
     } catch (err) {
       setError('Failed to load quiz questions. Please try again.');
       setQuizState('start');
     }
   }, [startTimer]);
 
+  useEffect(() => {
+    fetchQuizConfig();
+    fetchQuestionsCount();
+  }, [fetchQuizConfig, fetchQuestionsCount]);
+
   const handleStartQuiz = () => {
+    if (!quizConfig?.is_active) {
+      setError('Quiz is currently unavailable. Please try again later.');
+      return;
+    }
+    setError(null);
     setQuizState('loading');
     fetchQuestions();
   };
@@ -70,7 +111,24 @@ function App() {
     try {
       setQuizState('loading');
       stopTimer();
-      const submissionResults = await quizService.submitQuizAnswers(userAnswers, questions);
+      const timeTaken = (quizConfig?.timer_duration || 10) * 60 - timeLeft;
+      
+      // Determine username for submission
+      let username = null;
+      if (isAuthenticated && user) {
+        // Use authenticated user's username
+        username = user.username;
+      } else if (quizUsername.trim()) {
+        // Use provided username for anonymous users
+        username = quizUsername.trim();
+      }
+      
+      const submissionResults = await quizService.submitQuizAnswers(
+        userAnswers, 
+        timeTaken, 
+        sessionId,
+        username
+      );
       setResults(submissionResults);
       setQuizState('results');
     } catch (err) {
@@ -85,7 +143,29 @@ function App() {
     setUserAnswers({});
     setResults(null);
     setError(null);
+    setQuizUsername(''); // Reset username
     resetTimer();
+    setQuizState('start');
+  };
+
+  const handleRetry = () => {
+    setError(null);
+    if (quizState === 'start') {
+      handleStartQuiz();
+    } else if (quizState === 'active') {
+      fetchQuestions();
+    }
+  };
+
+  const handleShowAdmin = () => {
+    setQuizState('admin');
+  };
+
+  const handleAdminLoginSuccess = () => {
+    setQuizState('admin');
+  };
+
+  const handleBackToQuiz = () => {
     setQuizState('start');
   };
 
@@ -98,12 +178,20 @@ function App() {
           <div className="text-red-500 text-6xl mb-4">⚠️</div>
           <h2 className="text-2xl font-bold text-gray-800 mb-4">Oops! Something went wrong</h2>
           <p className="text-gray-600 mb-6">{error}</p>
-          <button
-            onClick={handleRestart}
-            className="bg-blue-500 text-white font-semibold py-2 px-6 rounded-lg hover:bg-blue-600 transition-colors"
-          >
-            Try Again
-          </button>
+          <div className="flex gap-4 justify-center">
+            <button
+              onClick={handleRetry}
+              className="bg-blue-500 text-white font-semibold py-2 px-6 rounded-lg hover:bg-blue-600 transition-colors"
+            >
+              Retry
+            </button>
+            <button
+              onClick={handleRestart}
+              className="bg-gray-500 text-white font-semibold py-2 px-6 rounded-lg hover:bg-gray-600 transition-colors"
+            >
+              Start Over
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -113,18 +201,40 @@ function App() {
     return <LoadingSpinner />;
   }
 
+  if (quizState === 'admin') {
+    return (
+      <ProtectedRoute requireStaff={true}>
+        <AdminPanel onBack={handleBackToQuiz} />
+      </ProtectedRoute>
+    );
+  }
+
   if (quizState === 'start') {
     return (
       <StartScreen
         onStartQuiz={handleStartQuiz}
-        totalQuestions={10} // Fixed to show 10 questions as per database
-        timeLimit={TIME_LIMIT_MINUTES}
+        onShowAdmin={handleShowAdmin}
+        onAdminLoginSuccess={handleAdminLoginSuccess}
+        totalQuestions={questionsCountLoading ? "..." : totalQuestionsCount}
+        timeLimit={quizConfig?.timer_duration || 10}
+        isQuizActive={quizConfig?.is_active !== false}
+        quizUsername={quizUsername}
+        setQuizUsername={setQuizUsername}
       />
     );
   }
 
   if (quizState === 'results' && results) {
-    return <ResultsScreen results={results} userAnswers={userAnswers} questions={questions} onRestart={handleRestart} />;
+    return (
+      <ResultsScreen
+        results={results}
+        userAnswers={userAnswers}
+        questions={questions}
+        onRestart={handleRestart}
+        config={quizConfig}
+        username={isAuthenticated ? user?.username : quizUsername}
+      />
+    );
   }
 
   if (quizState === 'active' && currentQuestion) {
@@ -139,6 +249,8 @@ function App() {
         onPrevious={handlePrevious}
         timeLeft={formattedTime}
         isLastQuestion={currentQuestionIndex === questions.length - 1}
+        config={quizConfig}
+        username={isAuthenticated ? user?.username : quizUsername}
       />
     );
   }
